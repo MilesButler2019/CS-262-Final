@@ -53,9 +53,8 @@ trainsets = [torch.utils.data.Subset(trainset, range(i * subset_size, (i + 1) * 
 
 # Reserve a portion of the data as a test set
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
-
 # client_id = 1
-async def get_trainset(client_id):    
+def get_trainset(client_id):    
 
     # Get the corresponding trainset
     trainset = trainsets[client_id]
@@ -108,21 +107,13 @@ def send_heartbeat(sock):
 
     while True:
         # Send a heartbeat message to the server
-        # time.sleep(1)
-        # print("hi")
-        sock.sendall('heartbeat'.encode())
-        data = sock.recv(1024)
-        print("Sending")
+        time.sleep(10)
+        try:
+            sock.sendall('heartbeat'.encode())
+            data = sock.recv(1024)
+        except:
+            continue
 
-        # sock.settimeout(5)  # Set a timeout of 1 second
-        # try:
-        #     data = sock.recv(1024)
-        # except socket.timeout:
-        #     # If no data is received within the timeout period, continue with the next iteration
-        #     continue
-        # trainng_round = data.decode()
-        # print(trainng_round)
-        # print("doing_work")
 
 
 def chunks(data, size=1024):
@@ -136,9 +127,9 @@ def get_num_clients(client_socket):
     return num_clients
 
 
-def send_weights(client_id,client_socket):
-    # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # client_socket.connect(('localhost', 8000))
+def send_weights(client_id):
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect(('localhost', 8000))
     # Send a message to request the weights
     client_socket.sendall('here_are_weights'.encode())
     file_name = 'local_model_client_{}.pt'.format(client_id)
@@ -154,13 +145,10 @@ def send_weights(client_id,client_socket):
             client_socket.sendall(chunk)
             pbar.update(len(chunk))
 
+    client_socket.close()
+
 def get_weights(client_id,client_socket):
-    # Create a TCP socket and connect to the server
-    # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # client_socket.connect(('localhost', 8000))
-    # Send a message to request the weights
-    
-    # client_socket.sendall('need_weights_pls'.encode())
+
 
     client_socket.sendall('need_weights_pls'.encode())
     # Open a file to write the weights to
@@ -178,7 +166,6 @@ def get_weights(client_id,client_socket):
                 break
     # Close the socket
     print("Loaded Weights")
-    client_socket.close()
 
 
 
@@ -195,7 +182,7 @@ def train(client_id,round):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(local_model.parameters(), lr=0.01, momentum=0.5)
-    epochs = 5
+    epochs = 1
     for epoch in range(epochs):
         train_loss = 0.0
         with tqdm(train_data, unit="batch") as tepoch:
@@ -216,10 +203,10 @@ def wait_for_clients(sock, client_thresh):
     print("Waiting for clients to connect...")
     while True:
         n = get_num_clients(sock)
-        print(n)
         print(f"Number of clients connected: {int(n)}")
         if int(n) >= client_thresh - 1:
             break
+        time.sleep(10)
 
 
 def training_loop(client_id,sock):
@@ -230,7 +217,7 @@ def training_loop(client_id,sock):
     print("Starting Training")
     train(client_id = client_id,round=1)
     print("Sending Weights")
-    send_weights(client_id,sock)
+    send_weights(client_id)
     print("Wating for Round to Finish")
 
 

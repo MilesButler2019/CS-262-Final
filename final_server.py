@@ -10,7 +10,7 @@ import torch
 import traceback
 
 # Define constants
-HEARTBEAT_INTERVAL = 5.0
+HEARTBEAT_INTERVAL = 10
 
 training_round = 1
 
@@ -40,7 +40,7 @@ def server():
         connection, client_address = sock.accept()
         print('connection from', client_address)
         clients[client_address] = time.time()
-        clients[client_address] = connection
+        client_connections[client_address] = connection
         # Start a new thread to handle the client connection
         threading.Thread(target=handle_client_connection, args=(connection, client_address)).start()
 
@@ -61,7 +61,7 @@ def handle_client_connection(connection, client_address):
                 connection.sendall(str(len(clients)).encode())
             # print(data.decode())
             # Handle incoming messages from clients
-            if data.decode() == 'need_weights_pls':
+            if data.decode(errors='ignore') == 'need_weights_pls':
                     # Replace with generic filename
                 # Replace with generic filename
                 filesize = os.path.getsize('global_model.pt')
@@ -74,7 +74,7 @@ def handle_client_connection(connection, client_address):
                         connection.sendall(chunk)
                         pbar.update(len(chunk))
 
-            elif data.decode() == 'here_are_weights':
+            elif data.decode(errors='ignore') == 'here_are_weights':
                 # file_name = connection.recv(1024)
                 # print(file_name)
                 # Open a file to write the weights to
@@ -95,7 +95,7 @@ def handle_client_connection(connection, client_address):
                 print("Loaded Weights")
                 # connection.close()
 
-            elif chunk.decode() == 'heartbeat':
+            elif chunk.decode(errors='ignore') == 'heartbeat':
                 # Update the heartbeat for this client
                 clients[client_address] = time.time()
                 # Send a response to the client
@@ -116,7 +116,6 @@ def check_heartbeats():
         now = time.time()
         for client_address in clients.copy():
             last_heartbeat_time = clients[client_address]
-            print(last_heartbeat_time)
             if now - last_heartbeat_time > HEARTBEAT_INTERVAL:
                 # print(now - last_heartbeat_time)
                 # The client has not sent a heartbeat message recently, remove it from the list
