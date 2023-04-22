@@ -16,6 +16,7 @@ training_round = 1
 
 # Initialize clients dictionary
 clients = {}
+client_connections = {}
 
 # Define helper function to send data in chunks
 def chunks(data):
@@ -39,6 +40,7 @@ def server():
         connection, client_address = sock.accept()
         print('connection from', client_address)
         clients[client_address] = time.time()
+        clients[client_address] = connection
         # Start a new thread to handle the client connection
         threading.Thread(target=handle_client_connection, args=(connection, client_address)).start()
 
@@ -96,11 +98,8 @@ def handle_client_connection(connection, client_address):
             elif chunk.decode() == 'heartbeat':
                 # Update the heartbeat for this client
                 clients[client_address] = time.time()
-                print(time.time())
                 # Send a response to the client
                 connection.sendall(str(training_round).encode())
-                # print("sendning")
-                # print(clients)
 
     except Exception as e:
         traceback.print_exc()
@@ -121,8 +120,9 @@ def check_heartbeats():
             if now - last_heartbeat_time > HEARTBEAT_INTERVAL:
                 # print(now - last_heartbeat_time)
                 # The client has not sent a heartbeat message recently, remove it from the list
-                # connection.close()
+                client_connections[client_address].close()
                 del clients[client_address]
+                del client_connections[client_address]
                 print(f"Removed inactive client: {client_address}")
 
         # Wait for the next check interval
