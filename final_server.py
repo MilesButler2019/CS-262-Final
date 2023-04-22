@@ -12,7 +12,7 @@ import traceback
 # Define constants
 HEARTBEAT_INTERVAL = 5.0
 
-training_round = 0
+training_round = 1
 
 # Initialize clients dictionary
 clients = {}
@@ -38,7 +38,7 @@ def server():
         print('waiting for a connection')
         connection, client_address = sock.accept()
         print('connection from', client_address)
-        
+        clients[client_address] = time.time()
         # Start a new thread to handle the client connection
         threading.Thread(target=handle_client_connection, args=(connection, client_address)).start()
 
@@ -53,6 +53,10 @@ def handle_client_connection(connection, client_address):
                 break
             data += chunk
 
+
+            if chunk.decode() == 'num_clients_connected':
+                time.sleep(2)
+                connection.sendall(str(len(clients)).encode())
             # print(data.decode())
             # Handle incoming messages from clients
             if data.decode() == 'need_weights_pls':
@@ -91,8 +95,8 @@ def handle_client_connection(connection, client_address):
 
             elif chunk.decode() == 'heartbeat':
                 # Update the heartbeat for this client
-                update_client_heartbeat(client_address)
                 clients[client_address] = time.time()
+                print(time.time())
                 # Send a response to the client
                 connection.sendall(str(training_round).encode())
                 # print("sendning")
@@ -105,10 +109,6 @@ def handle_client_connection(connection, client_address):
         print('connection closed')
         connection.close()
 
-# Define function to update the heartbeat for a client
-def update_client_heartbeat(client_address):
-    # Update the last heartbeat time for the client
-    clients[client_address] = time.time()
 
 
 def check_heartbeats():
@@ -117,8 +117,11 @@ def check_heartbeats():
         now = time.time()
         for client_address in clients.copy():
             last_heartbeat_time = clients[client_address]
+            print(last_heartbeat_time)
             if now - last_heartbeat_time > HEARTBEAT_INTERVAL:
+                # print(now - last_heartbeat_time)
                 # The client has not sent a heartbeat message recently, remove it from the list
+                # connection.close()
                 del clients[client_address]
                 print(f"Removed inactive client: {client_address}")
 

@@ -17,6 +17,7 @@ import argparse
 import socket
 import select
 import os
+import threading
 import time
 import io
 
@@ -54,7 +55,7 @@ trainsets = [torch.utils.data.Subset(trainset, range(i * subset_size, (i + 1) * 
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
 
 # client_id = 1
-def get_trainset(client_id):    
+async def get_trainset(client_id):    
 
     # Get the corresponding trainset
     trainset = trainsets[client_id]
@@ -93,7 +94,7 @@ server_address = "localhost"
 server_port = 8000
 
 
-async def connect():
+def connect():
             # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -102,7 +103,7 @@ async def connect():
     return sock
 
 
-async def send_heartbeat(sock):
+def send_heartbeat(sock):
 
 
     while True:
@@ -110,30 +111,32 @@ async def send_heartbeat(sock):
         # time.sleep(1)
         # print("hi")
         sock.sendall('heartbeat'.encode())
+        data = sock.recv(1024)
+        print("Sending")
 
-        sock.settimeout(1)  # Set a timeout of 1 second
-        try:
-            data = sock.recv(1024)
-        except socket.timeout:
-            # If no data is received within the timeout period, continue with the next iteration
-            continue
-        trainng_round = data.decode()
+        # sock.settimeout(5)  # Set a timeout of 1 second
+        # try:
+        #     data = sock.recv(1024)
+        # except socket.timeout:
+        #     # If no data is received within the timeout period, continue with the next iteration
+        #     continue
+        # trainng_round = data.decode()
         # print(trainng_round)
         # print("doing_work")
 
 
-async def chunks(data, size=1024):
+def chunks(data, size=1024):
     """Yield successive chunks of the given size from the data."""
     for i in range(0, len(data), size):
         yield data[i:i + size]
 
-async def get_num_clients(client_socket):
+def get_num_clients(client_socket):
     client_socket.sendall('num_clients_connected'.encode())
     num_clients = client_socket.recv(1024).decode()
     return num_clients
 
 
-async def send_weights(client_id,client_socket):
+def send_weights(client_id,client_socket):
     # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # client_socket.connect(('localhost', 8000))
     # Send a message to request the weights
@@ -147,11 +150,11 @@ async def send_weights(client_id,client_socket):
     model_bytes = buffer.getvalue()
     with tqdm(total=filesize, unit='B', unit_scale=True, desc=f"Sending {'local_model'}") as pbar:
     # Send the model in chunks
-        async for chunk in chunks(model_bytes):
+        for chunk in chunks(model_bytes):
             client_socket.sendall(chunk)
             pbar.update(len(chunk))
 
-async def get_weights(client_id,client_socket):
+def get_weights(client_id,client_socket):
     # Create a TCP socket and connect to the server
     # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # client_socket.connect(('localhost', 8000))
@@ -180,7 +183,7 @@ async def get_weights(client_id,client_socket):
 
 
 
-async def train(client_id,round):
+def train(client_id,round):
     local_model = Net()
     if round > 0:
         local_model.load_state_dict(torch.load('local_model_client_{}.pt'.format(client_id)))
@@ -209,44 +212,51 @@ async def train(client_id,round):
         train_loss = train_loss/len(train_data.dataset)
         print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
 
-async def wait_for_clients(sock, client_thresh):
+def wait_for_clients(sock, client_thresh):
     print("Waiting for clients to connect...")
     while True:
-        n = await get_num_clients(sock)
+        n = get_num_clients(sock)
         print(n)
         print(f"Number of clients connected: {int(n)}")
         if int(n) >= client_thresh - 1:
             break
 
 
-async def training_loop(client_id,sock):
-    await wait_for_clients(sock,client_thresh)
+def training_loop(client_id,sock):
+    wait_for_clients(sock,client_thresh)
     print("Training round",trainng_round)
     print("Loading Weights")
-    await get_weights(client_id,sock)
+    get_weights(client_id,sock)
     print("Starting Training")
-    await train(client_id = client_id,round=1)
+    train(client_id = client_id,round=1)
     print("Sending Weights")
-    await send_weights(client_id,sock)
+    send_weights(client_id,sock)
     print("Wating for Round to Finish")
 
 
-
-async def main(client_id):
+def main(client_id):
     # Start the send_message coroutine and the other_task coroutine concurrently
     print("Connecting to Server")
-    sock = await connect()
+    sock = connect()
     print("Connected!")
-    training_loop_l = asyncio.create_task(training_loop(client_id,sock))
-    heartbeat_task = asyncio.create_task(send_heartbeat(sock))
+    t1 = threading.Thread(target=training_loop, args=(client_id, sock))
+    t2 = threading.Thread(target=send_heartbeat, args=(sock,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    # training_loop_l = asyncio.create_task(training_loop(client_id,sock))
+    # heartbeat_task = asyncio.create_task(send_heartbeat(sock))
 
-    await asyncio.gather(training_loop_l,heartbeat_task)
+    # await asyncio.gather(heartbeat_task,training_loop_l)
 
 if __name__ == '__main__':
+   
     parser = argparse.ArgumentParser()
     parser.add_argument('--id',type=int, help='client_id')
     args = parser.parse_args()
-    asyncio.run(main(client_id = args.id))
+    main(client_id = args.id)
+    # asyncio.run(main(client_id = args.id))
 # asyncio.run(send_message())
 
 
