@@ -20,6 +20,7 @@ import os
 import threading
 import time
 import io
+import random
 
 # Define the URL of the Flask server
 server_url = 'http://34.229.220.141:5000'
@@ -48,6 +49,7 @@ trainng_round = 0
 batch_size = 32
 client_thresh = 5
 n = 5
+num_clients_connected = 0
 subset_size = len(trainset) // n
 trainsets = [torch.utils.data.Subset(trainset, range(i * subset_size, (i + 1) * subset_size)) for i in range(n)]
 
@@ -101,16 +103,23 @@ def connect():
     sock.connect(('localhost', 8000))
     return sock
 
+lock = threading.Lock()
 
 def send_heartbeat(sock):
 
+    global num_clients_connected,trainng_round
 
     while True:
         # Send a heartbeat message to the server
-        time.sleep(10)
+        time.sleep(3)
         try:
             sock.sendall('heartbeat'.encode())
-            data = sock.recv(1024)
+            data = str(sock.recv(1024).decode())
+
+            with lock:
+                num_clients_connected = int(data[0])
+                trainng_round = int(data[1])
+            # print(num_clients_connected,trainng_round)
         except:
             continue
 
@@ -151,6 +160,8 @@ def get_weights(client_id,client_socket):
 
 
     client_socket.sendall('need_weights_pls'.encode())
+    # rand_time = random.randint(30,60)
+    # time.sleep(rand_time)
     # Open a file to write the weights to
     with open("local_model_client_{}.pt".format(client_id), 'wb') as f:
         # Receive the model in chunks and write them to the file
@@ -164,6 +175,10 @@ def get_weights(client_id,client_socket):
             if not ready[0]:
                 # No bytes received within the timeout period, assume transfer is complete
                 break
+    try:
+        torch.load("local_model_client_{}.pt".format(client_id))
+    except:
+        get_weights(client_id,client_socket)
     # Close the socket
     print("Loaded Weights")
 
@@ -199,18 +214,33 @@ def train(client_id,round):
         train_loss = train_loss/len(train_data.dataset)
         print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
 
-def wait_for_clients(sock, client_thresh):
-    print("Waiting for clients to connect...")
-    while True:
-        n = get_num_clients(sock)
-        print(f"Number of clients connected: {int(n)}")
-        if int(n) >= client_thresh - 1:
-            break
-        time.sleep(10)
+# def wait_for_clients(sock, client_thresh):
+    # print("Waiting for clients to connect...")
+    # while True:
+    #     n = get_num_clients(sock)
+    #     print(f"Number of clients connected: {int(n)}")
+    #     if int(n) >= client_thresh - 1:
+    #         break
+    #     time.sleep(10)
 
 
 def training_loop(client_id,sock):
-    wait_for_clients(sock,client_thresh)
+    # wait_for_clients(sock,client_thresh)
+    # print(get_num_clients(sock))
+    print("Waiting for clients to connect...")
+    # while True:
+        # print()
+        # if int(num_clients_connected) >= client_thresh-1:
+
+            # break
+        # time.sleep(1)
+
+    while True:
+        print(f"Number of clients connected: {int(num_clients_connected)}")
+        if int(num_clients_connected) >= client_thresh - 1:
+            break
+        time.sleep(10)
+
     print("Training round",trainng_round)
     print("Loading Weights")
     get_weights(client_id,sock)

@@ -8,6 +8,7 @@ import asyncio
 from tqdm import tqdm
 import torch
 import traceback
+import struct
 
 # Define constants
 HEARTBEAT_INTERVAL = 10
@@ -56,12 +57,17 @@ def handle_client_connection(connection, client_address):
             data += chunk
 
 
-            if chunk.decode() == 'num_clients_connected':
-                time.sleep(2)
-                connection.sendall(str(len(clients)).encode())
+            # if chunk.decode(errors='ignore') == 'num_clients_connected':
+            #     time.sleep(2)
+            #     connection.sendall(str(len(clients)).encode())
+
+            # if chunk.decode(errors='ignore') == 'training_round':
+            #     time.sleep(2)
+            #     connection.sendall(str(training_round).encode())
             # print(data.decode())
             # Handle incoming messages from clients
-            if data.decode(errors='ignore') == 'need_weights_pls':
+            if chunk.decode(errors='ignore') == 'need_weights_pls':
+                print("serving weights")
                     # Replace with generic filename
                 # Replace with generic filename
                 filesize = os.path.getsize('global_model.pt')
@@ -74,7 +80,7 @@ def handle_client_connection(connection, client_address):
                         connection.sendall(chunk)
                         pbar.update(len(chunk))
 
-            elif data.decode(errors='ignore') == 'here_are_weights':
+            elif chunk.decode(errors='ignore') == 'here_are_weights':
                 # file_name = connection.recv(1024)
                 # print(file_name)
                 # Open a file to write the weights to
@@ -99,6 +105,9 @@ def handle_client_connection(connection, client_address):
                 # Update the heartbeat for this client
                 clients[client_address] = time.time()
                 # Send a response to the client
+                # out = str(training_round)+"_"+str(len(clients))
+                # encoded_int = struct.pack('!i', my_int)
+                connection.sendall(str(len(clients)).encode())
                 connection.sendall(str(training_round).encode())
 
     except Exception as e:
