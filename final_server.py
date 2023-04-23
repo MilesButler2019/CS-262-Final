@@ -24,9 +24,9 @@ LEADER = 0
 FOLLOWER = 1
 tracker = 0
 # HOSTS = {8000: "127.0.0.1", 8001: "127.0.0.1", 8002: "127.0.0.1"}
-HOSTS = {65432: "127.0.0.1", 65433: "127.0.0.1", 65434: "127.0.0.1"}
+HOSTS = {8000: "127.0.0.1", 8001: "127.0.0.1", 8002: "127.0.0.1"}
 # Port used is PORT + ID
-PORT = 65432
+PORT = 8000
 # Define helper function to send data in chunks
 def chunks(data):
     chunk_size = 1024
