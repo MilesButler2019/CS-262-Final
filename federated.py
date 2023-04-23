@@ -22,230 +22,260 @@ import time
 import io
 import random
 
-# Define the URL of the Flask server
-server_url = 'http://34.229.220.141:5000'
 
+HOSTS = ["127.0.0.1", "127.0.0.1", "127.0.0.1"]
+PORT = 65432 
 
-
-
-
-trainset = datasets.MNIST('data', download=True, train=True, transform=transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-]))
-testset = datasets.MNIST('data', download=True, train=False, transform=transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-]))
-
-# Shuffle the data
-indices = np.arange(len(trainset))
-np.random.shuffle(indices)
-trainset.data = trainset.data[indices]
-trainset.targets = trainset.targets[indices]
-trainng_round = 0
-# Divide the data into n subsets
-batch_size = 32
-client_thresh = 5
-local_train_round = 0
-n = 5
-num_clients_connected = 0
-subset_size = len(trainset) // n
-trainsets = [torch.utils.data.Subset(trainset, range(i * subset_size, (i + 1) * subset_size)) for i in range(n)]
-
-# Reserve a portion of the data as a test set
-testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
-# client_id = 1
-def get_trainset(client_id):    
-
-    # Get the corresponding trainset
-    trainset = trainsets[client_id]
-
-    # Convert the trainset to a DataLoader
-    trainloader = data_utils.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-
-    return trainloader
-
-
-
-
-
-
-server_address = "localhost"
-server_port = 8000
-
-
-def connect():
-            # Create a TCP/IP socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    # Connect the socket to the server's address and port
-    sock.connect(('localhost', 8000))
-    return sock
-
+# server_address = "localhost"
+# server_port = 8000
 lock = threading.Lock()
 
-def send_heartbeat(sock):
-
-    global num_clients_connected,trainng_round
-
-    while True:
-        # Send a heartbeat message to the server
-        time.sleep(3)
-        try:
-            sock.sendall('heartbeat'.encode())
-            data = str(sock.recv(1024).decode())
-
-            with lock:
-                num_clients_connected = int(data[0])
-                trainng_round = int(data[1])
-            # print(num_clients_connected,trainng_round)
-        except:
-            continue
-
-
-
+#Helper Function
 def chunks(data, size=1024):
     """Yield successive chunks of the given size from the data."""
     for i in range(0, len(data), size):
         yield data[i:i + size]
 
-def get_num_clients(client_socket):
-    client_socket.sendall('num_clients_connected'.encode())
-    num_clients = client_socket.recv(1024).decode()
-    return num_clients
 
+class Client:
+    def __init__(self,client_id):
+        self.primary_server_id = 0
+        self.client_id = client_id
+        self.trainset = datasets.MNIST('data', download=True, train=True, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ]))
+        self.testset = datasets.MNIST('data', download=True, train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ]))
+        # Shuffle the data
+        self.indices = np.arange(len(self.trainset))
+        np.random.shuffle(self.indices)
+        self.trainset.data = self.trainset.data[self.indices]
+        self.trainset.targets = self.trainset.targets[self.indices]
+        self.trainng_round = 0
+        # Divide the data into n subsets
+        self.batch_size = 32
+        self.client_thresh = 5
+        self.local_train_round = 0
+        self.n = 5
+        self.num_clients_connected = 0
+        self.subset_size = len(self.trainset) // self.n
+        self.trainsets = [torch.utils.data.Subset(self.trainset, range(i *self.subset_size, (i + 1) * self.subset_size)) for i in range(self.n)]
 
-def send_weights(client_id):
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect(('localhost', 8000))
-    # Send a message to request the weights
-    client_socket.sendall('here_are_weights'.encode())
-    file_name = 'local_model_client_{}.pt'.format(client_id)
-    # client_socket.sendall(f'local_model_client_{client_id}.pt'.encode())
-    filesize = os.path.getsize(file_name)
-    global_weights = torch.load(file_name)
-    buffer = io.BytesIO()
-    torch.save(global_weights, buffer)
-    model_bytes = buffer.getvalue()
-    with tqdm(total=filesize, unit='B', unit_scale=True, desc=f"Sending {'local_model'}") as pbar:
-    # Send the model in chunks
-        for chunk in chunks(model_bytes):
-            client_socket.sendall(chunk)
-            pbar.update(len(chunk))
+        # Reserve a portion of the data as a test set
+        self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=self.batch_size, shuffle=False)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# client_id = 1
+    def get_trainset(self):    
+        # Get the corresponding trainset
+        self.trainset = self.trainsets[self.client_id]
+        # Convert the trainset to a DataLoader
+        trainloader = data_utils.DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True)
 
-    status = client_socket.recv(1024).decode()
-    #Retry to send
-    if status == "Error":
-        send_weights(client_id=client_id)
-    client_socket.close()
+        return trainloader
 
-def get_weights(client_id,client_socket):
+    def initialize_socket(self, tries=3):
+        # If we've tried all three servers, return an error
+        if tries == 0:
+            return -1
+        self.socket.close()
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # If the current primary server doesn't work, try the next server (wrapping back around)
+        try:
+            self.socket.connect((HOSTS[self.primary_server_id], PORT + self.primary_server_id))
+        except:
+            self.primary_server_id = (self.primary_server_id + 1) % 3
+            return self.initialize_socket(tries - 1)
+        # connection_message = (CLIENT).to_bytes(1, byteorder = 'big')
+        # self.socket.sendall(connection_message)
+        time.sleep(0.05)
+        return 0
 
-
-    client_socket.sendall('need_weights_pls'.encode())
-    # rand_time = random.randint(30,60)
-    # time.sleep(rand_time)
-    # Open a file to write the weights to
-    with open("local_model_client_{}.pt".format(client_id), 'wb') as f:
-        # Receive the model in chunks and write them to the file
+    def send_heartbeat(self):
         while True:
-            chunk = client_socket.recv(1024)
-            if not chunk:
-                # Exit the loop when there are no more bytes to receive
-                break
-            f.write(chunk)
-            ready = select.select([client_socket], [], [], 0.1)
-            if not ready[0]:
-                # No bytes received within the timeout period, assume transfer is complete
-                break
-    try:
-        torch.load("local_model_client_{}.pt".format(client_id))
-    except:
-        get_weights(client_id,client_socket)
-    # Close the socket
-    print("Loaded Weights")
+            # Send a heartbeat message to the server
+            time.sleep(3)
+            try:
+                self.sock.sendall('c'.encode())
+                time.sleep(1)
+                self.sock.sendall('heartbeat'.encode())
+                data = str(self.sock.recv(1024).decode())
+
+                with lock:
+                    self.num_clients_connected = int(data[0])
+                    self.trainng_round = int(data[1])
+                # print(num_clients_connected,trainng_round)
+            except:
+                self.initialize_socket()
+                self.send_heartbeat()
+                continue
+
+    # def failover(self):
+    #     time.sleep(0.1)
+    #     self.primary_server_id = (self.primary_server_id + 1) % 3
+    #     self.initialize_socket()
+    #     self.login()
+    #     self.socket.sendall(packed_req)
 
 
+    def initialize_socket(self, tries=3):
+        # If we've tried all three servers, return an error
+        if tries == 0:
+            return -1
+        self.sock.close()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # If the current primary server doesn't work, try the next server (wrapping back around)
+        try:
+            self.sock.connect((HOSTS[self.primary_server_id], PORT + self.primary_server_id))
+        except:
+            self.primary_server_id = (self.primary_server_id + 1) % 3
+            return self.initialize_socket(tries - 1)
+        # connection_message = (CLIENT).to_bytes(1, byteorder = 'big')
+        # self.socket.sendall(connection_message)
+        # time.sleep(0.05)
+        # return 0
 
 
-def train(client_id,round):
-    local_model = Net()
-    if round > 0:
-        local_model.load_state_dict(torch.load('local_model_client_{}.pt'.format(client_id)))
-    checkpoint_path = "local_model_client_{}.pt".format(client_id) 
-    
-    train_data = get_trainset(client_id=client_id)
-    
-    #Define Hyperparameters and optimizer
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(local_model.parameters(), lr=0.01, momentum=0.5)
-    epochs = 1
-    for epoch in range(epochs):
-        train_loss = 0.0
-        with tqdm(train_data, unit="batch") as tepoch:
-            for data, target in tepoch:
-                optimizer.zero_grad()
-                output = local_model(data)
-                loss = criterion(output, target)
-                loss.backward()
-                optimizer.step()
-                train_loss += loss.item()*data.size(0)
-                tepoch.set_postfix(loss=loss.item())
-                torch.save(local_model.state_dict(), checkpoint_path)
-    
-        train_loss = train_loss/len(train_data.dataset)
-        print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
+    def send_weights(self):
+        # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # client_socket.connect(('localhost', 8000))
+        # Send a message to request the weights
+        
+        self.sock.sendall('c'.encode())
+        time.sleep(1)
+        self.sock.sendall('here_are_weights'.encode())
+        file_name = 'local_model_client_{}.pt'.format(self.client_id)
+        # client_socket.sendall(f'local_model_client_{client_id}.pt'.encode())
+        filesize = os.path.getsize(file_name)
+        global_weights = torch.load(file_name)
+        buffer = io.BytesIO()
+        torch.save(global_weights, buffer)
+        model_bytes = buffer.getvalue()
+        with tqdm(total=filesize, unit='B', unit_scale=True, desc=f"Sending {'local_model'}") as pbar:
+        # Send the model in chunks
+            for chunk in chunks(model_bytes):
+                self.sock.sendall(chunk)
+                pbar.update(len(chunk))
 
+        status = self.sock.recv(1024).decode()
+        #Retry to send
+        if status == "Error":
+            self.send_weights()
+        # client_socket.close()
 
-
-
-def training_loop(client_id,sock):
-    global local_train_round
-    local_train_round = trainng_round
-    while True:
-        if local_train_round < trainng_round:
-            print("Waiting for clients to connect...")
+    def get_weights(self):
+        self.sock.sendall('c'.encode())
+        time.sleep(1)
+        self.sock.sendall('need_weights_pls'.encode())
+        # rand_time = random.randint(30,60)
+        # time.sleep(rand_time)
+        # Open a file to write the weights to
+        with open("local_model_client_{}.pt".format(self.client_id), 'wb') as f:
+            # Receive the model in chunks and write them to the file
             while True:
-                print(f"Number of clients connected: {int(num_clients_connected)}")
-                if int(num_clients_connected) >= client_thresh - 1:
+                chunk = self.sock.recv(1024)
+                if not chunk:
+                    # Exit the loop when there are no more bytes to receive
                     break
+                f.write(chunk)
+                ready = select.select([self.sock], [], [], 0.1)
+                if not ready[0]:
+                    # No bytes received within the timeout period, assume transfer is complete
+                    break
+        try:
+            torch.load("local_model_client_{}.pt".format(self.client_id))
+        except:
+            self.get_weights()
+        # Close the socket
+        print("Loaded Weights")
+
+
+
+
+    def train(self,round):
+        local_model = Net()
+        if round > 0:
+            local_model.load_state_dict(torch.load('local_model_client_{}.pt'.format(self.client_id)))
+        checkpoint_path = "local_model_client_{}.pt".format(self.client_id) 
+        
+        train_data = self.get_trainset()
+        #Define Hyperparameters and optimizer
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(local_model.parameters(), lr=0.01, momentum=0.5)
+        epochs = 1
+        for epoch in range(epochs):
+            train_loss = 0.0
+            with tqdm(train_data, unit="batch") as tepoch:
+                for data, target in tepoch:
+                    optimizer.zero_grad()
+                    output = local_model(data)
+                    loss = criterion(output, target)
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.item()*data.size(0)
+                    tepoch.set_postfix(loss=loss.item())
+                    torch.save(local_model.state_dict(), checkpoint_path)
+        
+            train_loss = train_loss/len(train_data.dataset)
+            print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
+
+    def training_loop(self):
+        self.get_weights()
+        self.local_train_round = self.trainng_round
+        print("Training round",self.trainng_round)
+        while True:
+            if self.local_train_round < self.trainng_round:
+                print("Waiting for clients to connect...")
+                while True:
+                    print(f"Number of clients connected: {int(self.num_clients_connected)}")
+                    if int(self.num_clients_connected) >= self.client_thresh:
+                        break
+                    time.sleep(10)
+                print("Loading Weights")
+                try:
+                    self.get_weights()
+                except:
+                    self.initialize_socket()
+                    self.get_weights()
+                print("Starting Training")
+                self.train(round=0)
+                print("Sending Weights")
+
+                try:
+                    self.send_weights()
+                except:
+                    self.initialize_socket()
+                    self.send_weights()
+                print("Wating for Round to Finish")
+                self.local_train_round += 1
                 time.sleep(10)
-            print("Training round",trainng_round)
-            print("Loading Weights")
-            get_weights(client_id,sock)
-            print("Starting Training")
-            train(client_id = client_id,round=0)
-            print("Sending Weights")
-            send_weights(client_id)
-            print("Wating for Round to Finish")
-            local_train_round += 1
-            time.sleep(10)
 
-
-
-def main(client_id):
-    # Start the send_message coroutine and the other_task coroutine concurrently
-    print("Connecting to Server")
-    sock = connect()
-    print("Connected!")
-    
-
-    t1 = threading.Thread(target=training_loop, args=(client_id, sock))
-    t2 = threading.Thread(target=send_heartbeat, args=(sock,))
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
+    def main(self):
+        # Start the send_message coroutine and the other_task coroutine concurrently
+        print("Connecting to Server")
+        # sock = connect()
+        self.initialize_socket()
+        print("Connected!")
+        t1 = threading.Thread(target=self.training_loop)
+        t2 = threading.Thread(target=self.send_heartbeat)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
 
 if __name__ == '__main__':   
     parser = argparse.ArgumentParser()
     parser.add_argument('--id',type=int, help='client_id')
     args = parser.parse_args()
-    main(client_id = args.id)
-    # asyncio.run(main(client_id = args.id))
-# asyncio.run(send_message())
+
+    c = Client(client_id = args.id)
+    c.main()
+
+
+
 
 
 
