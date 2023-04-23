@@ -24,7 +24,7 @@ LEADER = 0
 FOLLOWER = 1
 tracker = 0
 # HOSTS = {8000: "127.0.0.1", 8001: "127.0.0.1", 8002: "127.0.0.1"}
-HOSTS = {65432: "127.0.0.1", 65433: "54.147.154.94", 65434: "127.0.0.1"}
+HOSTS = {65432: "73.182.164.147", 65433: "54.147.154.94", 65434: "73.182.164.147"}
 # Port used is PORT + ID
 PORT = 65432
 # Define helper function to send data in chunks
