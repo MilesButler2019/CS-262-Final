@@ -5,10 +5,11 @@ Todo for Nibras:
 
 
 Todo for Miles: 
-- Aggergate Weights from servers end [ ]
-- Client thread to check what round and loops through rounds [X, ] 
+- Aggergate Weights from servers end [X]
+- Client thread to check what round and loops through rounds [X, X] 
 - Server side check for n clients before starting rounds [X]
-- Determine what to do when client drops [ ]
+- Determine what to do when client drops []
+- Evaluation on Server side of model
 
 
 Todo Together:
