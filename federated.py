@@ -43,11 +43,11 @@ indices = np.arange(len(trainset))
 np.random.shuffle(indices)
 trainset.data = trainset.data[indices]
 trainset.targets = trainset.targets[indices]
-
 trainng_round = 0
 # Divide the data into n subsets
 batch_size = 32
 client_thresh = 5
+local_train_round = 0
 n = 5
 num_clients_connected = 0
 subset_size = len(trainset) // n
@@ -65,26 +65,6 @@ def get_trainset(client_id):
     trainloader = data_utils.DataLoader(trainset, batch_size=batch_size, shuffle=True)
 
     return trainloader
-
-def get_global_model():
-    try:
-        response = requests.get('http://34.229.220.141:5000/get_global_model')
-    except:
-        print("cant load model")
-    global_model_params = response.json()
-
-    global_model_params = {k.replace('.', '_'): v for k, v in global_model_params.items()}
-
-    for name, param in global_model_params.items():
-        setattr(local_model, name, nn.Parameter(torch.tensor(param)))
-
-    # # Print the model parameters to verify that they have been set correctly
-    for name, param in local_model.named_parameters():
-        print(name, param.shape)
-
-
-
-
 
 
 
@@ -154,6 +134,10 @@ def send_weights(client_id):
             client_socket.sendall(chunk)
             pbar.update(len(chunk))
 
+    status = client_socket.recv(1024).decode()
+    #Retry to send
+    if status == "Error":
+        send_weights(client_id=client_id)
     client_socket.close()
 
 def get_weights(client_id,client_socket):
@@ -214,41 +198,31 @@ def train(client_id,round):
         train_loss = train_loss/len(train_data.dataset)
         print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
 
-# def wait_for_clients(sock, client_thresh):
-    # print("Waiting for clients to connect...")
-    # while True:
-    #     n = get_num_clients(sock)
-    #     print(f"Number of clients connected: {int(n)}")
-    #     if int(n) >= client_thresh - 1:
-    #         break
-    #     time.sleep(10)
+
 
 
 def training_loop(client_id,sock):
-    # wait_for_clients(sock,client_thresh)
-    # print(get_num_clients(sock))
-    print("Waiting for clients to connect...")
-    # while True:
-        # print()
-        # if int(num_clients_connected) >= client_thresh-1:
-
-            # break
-        # time.sleep(1)
-
+    global local_train_round
+    local_train_round = trainng_round
     while True:
-        print(f"Number of clients connected: {int(num_clients_connected)}")
-        if int(num_clients_connected) >= client_thresh - 1:
-            break
-        time.sleep(10)
+        if local_train_round < trainng_round:
+            print("Waiting for clients to connect...")
+            while True:
+                print(f"Number of clients connected: {int(num_clients_connected)}")
+                if int(num_clients_connected) >= client_thresh - 1:
+                    break
+                time.sleep(10)
+            print("Training round",trainng_round)
+            print("Loading Weights")
+            get_weights(client_id,sock)
+            print("Starting Training")
+            train(client_id = client_id,round=0)
+            print("Sending Weights")
+            send_weights(client_id)
+            print("Wating for Round to Finish")
+            local_train_round += 1
+            time.sleep(10)
 
-    print("Training round",trainng_round)
-    print("Loading Weights")
-    get_weights(client_id,sock)
-    print("Starting Training")
-    train(client_id = client_id,round=1)
-    print("Sending Weights")
-    send_weights(client_id)
-    print("Wating for Round to Finish")
 
 
 def main(client_id):
@@ -256,19 +230,16 @@ def main(client_id):
     print("Connecting to Server")
     sock = connect()
     print("Connected!")
+    
+
     t1 = threading.Thread(target=training_loop, args=(client_id, sock))
     t2 = threading.Thread(target=send_heartbeat, args=(sock,))
     t1.start()
     t2.start()
     t1.join()
     t2.join()
-    # training_loop_l = asyncio.create_task(training_loop(client_id,sock))
-    # heartbeat_task = asyncio.create_task(send_heartbeat(sock))
 
-    # await asyncio.gather(heartbeat_task,training_loop_l)
-
-if __name__ == '__main__':
-   
+if __name__ == '__main__':   
     parser = argparse.ArgumentParser()
     parser.add_argument('--id',type=int, help='client_id')
     args = parser.parse_args()
