@@ -19,7 +19,7 @@ lock = threading.Lock()
 clients = {}
 client_connections = {}
 num_weights_recieved = 0
-
+client_thresh = 4
 LEADER = 0
 FOLLOWER = 1
 tracker = 0
@@ -62,13 +62,13 @@ class Server:
         self.sock.bind(self.server_address)
         # Listen for incoming connections
         self.sock.listen(5)
-        print(self.other_servers)
+        # print(self.other_servers)
         self.connect_to_servers()
         while True:
             # Wait for a connection
             print('waiting for a connection')
             self.connection, self.client_address = self.sock.accept()
-            print('connection from', self.client_address)
+            # print('connection from', self.client_address)
             clients[self.client_address] = time.time()
             client_connections[self.client_address] = self.connection
             # Start a new thread to handle the client connection
@@ -94,11 +94,13 @@ class Server:
 
 
     def handle_server_connection(self,connection,port):
-        print("Connected to " + str(port))
+        print("Connected to server" + str(port))
         self.other_servers[port] = connection
         data = connection.recv(1024).decode()
+        
         if data[0] == LEADER:
-            self.master_id = int(str(data[1:5])) - PORT    
+            self.master_id = int(str(data[1:5])) - PORT
+            self.training_round = data[1]
       
                 
 
@@ -107,7 +109,7 @@ class Server:
         #Check if master
         time.sleep(5)
         while True:
-            print(self.id,self.master_id)
+            print("Server ID",self.id,"Master ID",self.master_id,"Training Round",self.training_round)
             message = str((LEADER if self.id == self.master_id else FOLLOWER))
 
                     # Close the socket
@@ -117,7 +119,7 @@ class Server:
                 try:
                     self.other_servers[port].sendall(f's{port}'.encode())
                     time.sleep(1)
-                    self.other_servers[port].sendall(message.encode())
+                    self.other_servers[port].sendall(message.encode()+str(self.training_round).encode())
                    
                 except:
 
@@ -191,8 +193,7 @@ class Server:
                         torch.load(f"clinet_{client_address[1]}_round_{self.training_round}.pt")
                         connection.sendall("Recieved".encode())
                         print("sucsess")
-                        with lock:
-                            self.num_weights_recieved += 1
+                        self.num_weights_recieved += 1
                     except:
                         connection.sendall("Error".encode())
 
@@ -255,21 +256,23 @@ class Server:
                     del self.clients[client_address]
                     del self.client_connections[client_address]
                     print(f"Removed inactive client: {client_address}")
-
             # Wait for the next check interval
             time.sleep(HEARTBEAT_INTERVAL)
 
     def update_round(self):
         #Give clients a chance to connect
         time.sleep(10)
+        current_directory = os.getcwd()
         while True:
-            if self.num_weights_recieved >= len(self.clients):
-                # global self.training_round
+            model_files = []
+            # print("Num weights received",)
+            for f in os.listdir(current_directory):
+                if f.endswith(f'_{self.training_round}.pt') and f.startswith('clinet'):
+                    model_files.append(f)
+            if len(model_files) > client_thresh:
                 print("Averaging weights")
                 self.aggergate_weights()
-                with lock:
-                    self.training_round += 1
-                break
+                self.training_round += 1
             time.sleep(10)
 
     # def run(self):
