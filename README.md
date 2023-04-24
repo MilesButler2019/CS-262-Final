@@ -1,5 +1,4 @@
-# CS-262-Final
-
+# CS-262-Final - Distributed Federated Learning
 
 
 ## How to use:
