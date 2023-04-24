@@ -110,26 +110,26 @@ class Client:
                     # print(self.num_clients_connected,self.trainng_round)
                 # print(num_clients_connected,trainng_round)
             except:
-                try:
-                    self.send_heartbeat()
-                except:
-                    self.initialize_socket()
-                
-                continue
+                # try:
+                    # 
+                # except:
+                self.initialize_socket()
+                self.send_heartbeat()
+                # continue
 
 
-    # def initialize_socket(self, tries=3):
-    #     # If we've tried all three servers, return an error
-    #     if tries == 0:
-    #         return -1
-    #     self.sock.close()
-    #     self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     # If the current primary server doesn't work, try the next server (wrapping back around)
-    #     try:
-    #         self.sock.connect((HOSTS[self.primary_server_id], PORT + self.primary_server_id))
-    #     except:
-    #         self.primary_server_id = (self.primary_server_id + 1) % 3
-    #         return self.initialize_socket(tries - 1)
+    def initialize_socket(self, tries=3):
+        # If we've tried all three servers, return an error
+        if tries == 0:
+            return -1
+        self.sock.close()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # If the current primary server doesn't work, try the next server (wrapping back around)
+        try:
+            self.sock.connect((HOSTS[self.primary_server_id], PORT + self.primary_server_id))
+        except:
+            self.primary_server_id = (self.primary_server_id + 1) % 3
+            return self.initialize_socket(tries - 1)
         # connection_message = (CLIENT).to_bytes(1, byteorder = 'big')
         # self.socket.sendall(connection_message)
         # time.sleep(0.05)
