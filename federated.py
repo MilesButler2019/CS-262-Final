@@ -24,7 +24,8 @@ import random
 
 
 HOSTS = ["127.0.0.1", "127.0.0.1", "127.0.0.1"]
-PORT = 65432 
+PORT = 8000
+# 65432 
 
 # server_address = "localhost"
 # server_port = 8000
@@ -96,28 +97,24 @@ class Client:
     def send_heartbeat(self):
         while True:
             # Send a heartbeat message to the server
-            time.sleep(3)
+            time.sleep(1)
             try:
                 self.sock.sendall('c'.encode())
-                time.sleep(1)
+                time.sleep(2)
                 self.sock.sendall('heartbeat'.encode())
                 data = str(self.sock.recv(1024).decode())
-
                 with lock:
                     self.num_clients_connected = int(data[0])
                     self.trainng_round = int(data[1])
+                    # print(self.num_clients_connected,self.trainng_round)
                 # print(num_clients_connected,trainng_round)
             except:
-                self.initialize_socket()
-                self.send_heartbeat()
+                try:
+                    self.send_heartbeat()
+                except:
+                    self.initialize_socket()
+                
                 continue
-
-    # def failover(self):
-    #     time.sleep(0.1)
-    #     self.primary_server_id = (self.primary_server_id + 1) % 3
-    #     self.initialize_socket()
-    #     self.login()
-    #     self.socket.sendall(packed_req)
 
 
     def initialize_socket(self, tries=3):
@@ -175,14 +172,20 @@ class Client:
         with open("local_model_client_{}.pt".format(self.client_id), 'wb') as f:
             # Receive the model in chunks and write them to the file
             while True:
-                chunk = self.sock.recv(1024)
-                if not chunk:
-                    # Exit the loop when there are no more bytes to receive
+                try:
+                    chunk = self.sock.recv(1024)
+                    if not chunk:
+                        # Exit the loop when there are no more bytes to receive
+                        break
+                    f.write(chunk)
+                except:
                     break
-                f.write(chunk)
-                ready = select.select([self.sock], [], [], 0.1)
-                if not ready[0]:
-                    # No bytes received within the timeout period, assume transfer is complete
+                try:
+                    ready = select.select([self.sock], [], [], 0.1)
+                    if not ready[0]:
+                        # No bytes received within the timeout period, assume transfer is complete
+                        break
+                except:
                     break
         try:
             torch.load("local_model_client_{}.pt".format(self.client_id))
@@ -223,9 +226,7 @@ class Client:
             print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1, train_loss))
 
     def training_loop(self):
-        self.get_weights()
         self.local_train_round = self.trainng_round
-        print("Training round",self.trainng_round)
         while True:
             if self.local_train_round < self.trainng_round:
                 print("Waiting for clients to connect...")
@@ -233,13 +234,17 @@ class Client:
                     print(f"Number of clients connected: {int(self.num_clients_connected)}")
                     if int(self.num_clients_connected) >= self.client_thresh:
                         break
-                    time.sleep(10)
+                    time.sleep(4)
+                print("Training round",self.trainng_round)
                 print("Loading Weights")
                 try:
                     self.get_weights()
                 except:
-                    self.initialize_socket()
-                    self.get_weights()
+                    try:
+                        self.get_weights()
+                    except:
+                        self.initialize_socket()
+                        self.get_weights()
                 print("Starting Training")
                 self.train(round=0)
                 print("Sending Weights")
@@ -247,11 +252,14 @@ class Client:
                 try:
                     self.send_weights()
                 except:
-                    self.initialize_socket()
-                    self.send_weights()
+                    try:
+                        self.send_weights()
+                    except:
+                        self.initialize_socket()
+                        self.send_weights()
                 print("Wating for Round to Finish")
                 self.local_train_round += 1
-                time.sleep(10)
+                time.sleep(5)
 
     def main(self):
         # Start the send_message coroutine and the other_task coroutine concurrently

@@ -111,7 +111,7 @@ class Server:
             message = str((LEADER if self.id == self.master_id else FOLLOWER))
 
                     # Close the socket
-                
+        
             for port in self.other_servers:
                 
                 try:
@@ -119,7 +119,6 @@ class Server:
                     time.sleep(1)
                     self.other_servers[port].sendall(message.encode())
                    
-              
                 except:
 
                     # If the server is down then close the connection
@@ -170,8 +169,7 @@ class Server:
                 elif chunk.decode(errors='ignore') == 'here_are_weights':
                     print("Working")
                     # globaself.num_weights_recieved;
-                    with lock:
-                        self.num_weights_recieved += 1
+                    
                     # Open a file to write the weights to
                     with open(f"clinet_{client_address[1]}_round_{self.training_round}.pt", 'wb') as f:
                         # Receive the model in chunks and write them to the file
@@ -193,6 +191,8 @@ class Server:
                         torch.load(f"clinet_{client_address[1]}_round_{self.training_round}.pt")
                         connection.sendall("Recieved".encode())
                         print("sucsess")
+                        with lock:
+                            self.num_weights_recieved += 1
                     except:
                         connection.sendall("Error".encode())
 
@@ -286,5 +286,4 @@ if __name__ == '__main__':
     # # Start hearbeat check in its own thread
     threading.Thread(target=s.check_heartbeats).start()
     threading.Thread(target=s.server_hearbeat).start()
-     # Start update round in its own thread
-    # threading.Thread(target=s.update_round).start()
+    threading.Thread(target=s.update_round).start()
