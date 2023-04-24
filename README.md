@@ -33,9 +33,9 @@ If you would like the replicated servers to run on different machines, you must 
 
 To run the tests 
 
-`
+```
 python3 tests.py
-`
+```
 
 
 
