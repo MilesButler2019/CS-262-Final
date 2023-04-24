@@ -1,21 +1,21 @@
 # CS-262-Final - Distributed Federated Learning
 
 
-## How to use:
+### How to use:
 
-First run
+### First run
 ```
 pip install -r requirements.txt
 ```
 
-In seperate terminals or machines run
+### In seperate terminals or machines run
 ```
 python3 final_server.py --id 0 
 python3 final_server.py --id 1   
 python3 final_server.py --id 2   
 ```
 
-Then run the client machines (only 5 for our code)
+### Then run the client machines (only 5 for our code)
 
 ```
 python3 federated.py --id 0
@@ -31,11 +31,25 @@ If you would like the replicated servers to run on different machines, you must 
 
 
 
-To run the tests 
+### To run the tests 
 
 ```
 python3 tests.py
 ```
+
+
+
+### How our code works: 
+#### Server 
+- Server - Server Heartbeat function that transmits status and weights to slaves from master, this runs independently in its own thread. 
+- Server - Client Heartbeat function that transmits the round number and number of connected clients to the clients periodically  in its own thread
+- Fault tolerance - our server is replicated between 3 different machines utilizing the master - slave replication. Our implementation guides all traffic to the current master and has the slaves on standby in case the master fails.
+#### Client  
+
+Connects to server and wait for a certain number of clients to start training round, server then sends updated training round and client then download model weights in the form of a .pt file as this is the form that Pytoch uses. The client then checks if the weights have been download successfully (we found that by sending them over the wire can cause them to be corrupted to counteract this we do a retry until they can be loaded correctly). Once the client has the weights, it then begins training on its own local data for a set number of epochs (we choose 1 as this was quicker to test). Once the client has finished training it then sends its newly trained weights tot the server and waits for the round to increment.
+
+
+
 
 
 
