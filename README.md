@@ -1,6 +1,10 @@
 # CS-262-Final - Distributed Federated Learning
 
 
+<img width="547" alt="Screen Shot 2023-04-25 at 9 54 03 AM" src="https://user-images.githubusercontent.com/47306315/234298977-7372f606-f714-41c0-96ea-50ae9130aba1.png">
+
+
+
 ### How to use:
 
 ### First run
