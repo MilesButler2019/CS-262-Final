@@ -83,7 +83,6 @@ Todo Together:
 
 Today we brainstormed some ways to hangled dropping Clients
 
-- Handling the dropout of clients during federated learning is an important aspect of the design of a federated learning system. Here are a few approaches that can be used to handle client dropout:
 
 - Replicate training data: One approach is to replicate the data of the dropped client to other clients. This can be done by either transferring the data to another client, or by increasing the weight of the data of the remaining clients in the aggregation.
 
